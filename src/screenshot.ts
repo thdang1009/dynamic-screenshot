@@ -1,9 +1,23 @@
 import puppeteer from 'puppeteer';
 import fs from 'fs';
+import { ViewportMode } from './cache';
+
+const VIEWPORTS: Record<ViewportMode, { width: number; height: number; isMobile?: boolean }> = {
+  mobile:  { width: 390,  height: 844,  isMobile: true },
+  desktop: { width: 1280, height: 800 },
+  fullhd:  { width: 1920, height: 1080 },
+};
+
+const MOBILE_UA =
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-export async function captureScreenshot(url: string, outputPath: string): Promise<void> {
+export async function captureScreenshot(
+  url: string,
+  outputPath: string,
+  mode: ViewportMode = 'desktop',
+): Promise<void> {
   const browser = await puppeteer.launch({
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
@@ -11,7 +25,11 @@ export async function captureScreenshot(url: string, outputPath: string): Promis
 
   try {
     const page = await browser.newPage();
-    await page.setViewport({ width: 1280, height: 800 });
+    await page.setViewport(VIEWPORTS[mode]);
+
+    if (mode === 'mobile') {
+      await page.setUserAgent(MOBILE_UA);
+    }
 
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 30_000 });
 
@@ -34,7 +52,7 @@ export async function captureScreenshot(url: string, outputPath: string): Promis
       });
     });
 
-    await sleep(600); // let lazy images finish loading after scroll
+    await sleep(600);
 
     const buffer = await page.screenshot({ fullPage: true, type: 'png' });
     fs.writeFileSync(outputPath, buffer);

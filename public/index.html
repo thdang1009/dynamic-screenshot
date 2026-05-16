@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dynamic Screenshot</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d0f1a;
+      --surface:   #161927;
+      --card:      #1c2035;
+      --border:    #2a2f4a;
+      --primary:   #6366f1;
+      --primary-h: #4f52d4;
+      --text:      #e2e4f0;
+      --muted:     #7880a0;
+      --success:   #22c55e;
+      --warning:   #f59e0b;
+      --danger:    #ef4444;
+      --badge-mobile:   #f59e0b;
+      --badge-desktop:  #3b82f6;
+      --badge-fullhd:   #a855f7;
+      --radius:    10px;
+      --shadow:    0 4px 24px rgba(0,0,0,.4);
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      font-size: 14px;
+      min-height: 100vh;
+    }
+
+    /* ── Header ─────────────────────────────────────────────────────── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    header .logo {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--primary);
+      letter-spacing: -0.3px;
+    }
+    header .logo span { color: var(--text); }
+    header .count {
+      margin-left: auto;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    /* ── Capture bar ─────────────────────────────────────────────────── */
+    .capture-bar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 24px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .url-input {
+      flex: 1;
+      min-width: 240px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-size: 14px;
+      padding: 9px 14px;
+      outline: none;
+      transition: border-color .15s;
+    }
+    .url-input::placeholder { color: var(--muted); }
+    .url-input:focus { border-color: var(--primary); }
+
+    .mode-group {
+      display: flex;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .mode-btn {
+      padding: 8px 14px;
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: background .15s, color .15s;
+    }
+    .mode-btn:not(:last-child) { border-right: 1px solid var(--border); }
+    .mode-btn.active {
+      background: var(--primary);
+      color: #fff;
+    }
+    .mode-btn:not(.active):hover { background: var(--border); color: var(--text); }
+
+    .capture-btn {
+      padding: 9px 20px;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      transition: background .15s, transform .1s;
+      white-space: nowrap;
+    }
+    .capture-btn:hover:not(:disabled) { background: var(--primary-h); }
+    .capture-btn:active:not(:disabled) { transform: scale(.97); }
+    .capture-btn:disabled { opacity: .5; cursor: not-allowed; }
+    .capture-btn .spinner {
+      width: 14px; height: 14px;
+      border: 2px solid rgba(255,255,255,.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .6s linear infinite;
+      display: none;
+    }
+    .capture-btn.loading .spinner { display: block; }
+    .capture-btn.loading .btn-icon { display: none; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Toast ───────────────────────────────────────────────────────── */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      padding: 12px 18px;
+      border-radius: var(--radius);
+      font-size: 13px;
+      font-weight: 500;
+      color: #fff;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity .2s, transform .2s;
+      z-index: 9999;
+      pointer-events: none;
+    }
+    #toast.show { opacity: 1; transform: translateY(0); }
+    #toast.success { background: #166534; border: 1px solid var(--success); }
+    #toast.error   { background: #7f1d1d; border: 1px solid var(--danger); }
+    #toast.info    { background: #1e3a5f; border: 1px solid #3b82f6; }
+
+    /* ── Gallery ─────────────────────────────────────────────────────── */
+    .gallery-header {
+      padding: 20px 24px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .gallery-title { font-size: 13px; color: var(--muted); font-weight: 500; }
+
+    .gallery {
+      padding: 0 24px 48px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 16px;
+    }
+
+    .empty-state {
+      grid-column: 1 / -1;
+      text-align: center;
+      padding: 64px 24px;
+      color: var(--muted);
+    }
+    .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+    .empty-state p { font-size: 15px; }
+    .empty-state small { font-size: 12px; }
+
+    /* ── Cards ───────────────────────────────────────────────────────── */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      cursor: pointer;
+      transition: border-color .2s, transform .15s, box-shadow .15s;
+    }
+    .card:hover {
+      border-color: var(--primary);
+      transform: translateY(-2px);
+      box-shadow: var(--shadow);
+    }
+
+    .card-thumb {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      overflow: hidden;
+      background: var(--bg);
+      position: relative;
+    }
+    .card-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: top;
+      display: block;
+      transition: opacity .2s;
+    }
+    .card-thumb img.loading { opacity: 0; }
+
+    .card-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(13,15,26,.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      opacity: 0;
+      transition: opacity .2s;
+    }
+    .card:hover .card-overlay { opacity: 1; }
+
+    .overlay-btn {
+      padding: 7px 14px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      transition: transform .1s;
+    }
+    .overlay-btn:active { transform: scale(.95); }
+    .overlay-btn.view    { background: var(--primary); color: #fff; }
+    .overlay-btn.refresh { background: var(--card); color: var(--text); border: 1px solid var(--border); }
+    .overlay-btn.refresh.spinning { pointer-events: none; opacity: .6; }
+
+    .card-body {
+      padding: 12px 14px;
+    }
+    .card-url {
+      font-size: 13px;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 6px;
+    }
+    .card-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+    }
+    .badge-mobile  { background: rgba(245,158,11,.15); color: var(--badge-mobile); }
+    .badge-desktop { background: rgba(59,130,246,.15);  color: var(--badge-desktop); }
+    .badge-fullhd  { background: rgba(168,85,247,.15);  color: var(--badge-fullhd); }
+    .card-time { font-size: 11px; color: var(--muted); margin-left: auto; }
+
+    /* ── Modal ───────────────────────────────────────────────────────── */
+    #modal {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: none;
+      flex-direction: column;
+      background: var(--bg);
+    }
+    #modal.open { display: flex; }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 20px;
+      height: 56px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .modal-back {
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      padding: 6px 10px;
+      border-radius: 6px;
+      transition: background .15s, color .15s;
+    }
+    .modal-back:hover { background: var(--border); color: var(--text); }
+    .modal-title {
+      font-size: 13px;
+      color: var(--text);
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex: 1;
+    }
+    .modal-actions { display: flex; gap: 8px; }
+    .icon-btn {
+      width: 34px; height: 34px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--text);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background .15s;
+      text-decoration: none;
+      font-size: 15px;
+    }
+    .icon-btn:hover { background: var(--border); }
+
+    .modal-body {
+      flex: 1;
+      overflow: hidden;
+      display: flex;
+      align-items: stretch;
+      position: relative;
+    }
+
+    .nav-arrow {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 2;
+      width: 44px; height: 44px;
+      border-radius: 50%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      transition: background .15s, opacity .15s;
+    }
+    .nav-arrow:hover { background: var(--border); }
+    .nav-arrow:disabled { opacity: .2; cursor: default; }
+    .nav-arrow.prev { left: 12px; }
+    .nav-arrow.next { right: 12px; }
+
+    .modal-img-wrap {
+      flex: 1;
+      overflow: auto;
+      display: flex;
+      justify-content: center;
+      padding: 24px 72px;
+      background: var(--bg);
+    }
+    .modal-img-wrap img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 6px;
+      box-shadow: var(--shadow);
+      display: block;
+    }
+
+    .modal-footer {
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: 12px;
+      color: var(--muted);
+      flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+    .modal-footer a { color: var(--primary); text-decoration: none; }
+    .modal-footer a:hover { text-decoration: underline; }
+    .modal-nav-counter { margin-left: auto; font-weight: 500; }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ───────────────────────────────────────────────────────── -->
+<header>
+  <div class="logo">dynamic<span>shot</span></div>
+  <span class="count" id="count"></span>
+</header>
+
+<!-- ── Capture bar ───────────────────────────────────────────────────── -->
+<div class="capture-bar">
+  <input
+    class="url-input"
+    id="urlInput"
+    type="url"
+    placeholder="https://example.com"
+    autocomplete="off"
+    spellcheck="false"
+  />
+
+  <div class="mode-group" id="modeGroup">
+    <button class="mode-btn" data-mode="mobile"  title="390×844 + mobile UA">
+      📱 Mobile
+    </button>
+    <button class="mode-btn active" data-mode="desktop" title="1280×800">
+      🖥 Desktop
+    </button>
+    <button class="mode-btn" data-mode="fullhd" title="1920×1080">
+      ✦ Full HD
+    </button>
+  </div>
+
+  <button class="capture-btn" id="captureBtn">
+    <span class="btn-icon">▶ Capture</span>
+    <span class="spinner"></span>
+  </button>
+</div>
+
+<!-- ── Gallery ───────────────────────────────────────────────────────── -->
+<div class="gallery-header">
+  <span class="gallery-title" id="galleryLabel">All screenshots</span>
+</div>
+<div class="gallery" id="gallery"></div>
+
+<!-- ── Detail modal ─────────────────────────────────────────────────── -->
+<div id="modal">
+  <div class="modal-header">
+    <button class="modal-back" id="modalBack">← Back</button>
+    <div class="modal-title" id="modalTitle"></div>
+    <div class="modal-actions">
+      <a class="icon-btn" id="modalDownload" title="Download" download>⬇</a>
+      <button class="icon-btn" id="modalRefresh" title="Force refresh">↺</button>
+    </div>
+  </div>
+
+  <div class="modal-body">
+    <button class="nav-arrow prev" id="prevBtn">‹</button>
+    <div class="modal-img-wrap">
+      <img id="modalImg" src="" alt="Screenshot" />
+    </div>
+    <button class="nav-arrow next" id="nextBtn">›</button>
+  </div>
+
+  <div class="modal-footer">
+    <span id="modalUrl"></span>
+    <span id="modalMode"></span>
+    <span id="modalTime"></span>
+    <span class="modal-nav-counter" id="navCounter"></span>
+  </div>
+</div>
+
+<!-- ── Toast ────────────────────────────────────────────────────────── -->
+<div id="toast"></div>
+
+<script>
+  /* ── State ─────────────────────────────────────────────────────────── */
+  let screenshots = [];
+  let currentMode = 'desktop';
+  let modalIndex  = -1;
+
+  /* ── DOM refs ──────────────────────────────────────────────────────── */
+  const urlInput    = document.getElementById('urlInput');
+  const captureBtn  = document.getElementById('captureBtn');
+  const modeGroup   = document.getElementById('modeGroup');
+  const gallery     = document.getElementById('gallery');
+  const galleryLabel= document.getElementById('galleryLabel');
+  const count       = document.getElementById('count');
+  const toast       = document.getElementById('toast');
+
+  const modal         = document.getElementById('modal');
+  const modalBack     = document.getElementById('modalBack');
+  const modalTitle    = document.getElementById('modalTitle');
+  const modalImg      = document.getElementById('modalImg');
+  const modalUrl      = document.getElementById('modalUrl');
+  const modalMode     = document.getElementById('modalMode');
+  const modalTime     = document.getElementById('modalTime');
+  const modalDownload = document.getElementById('modalDownload');
+  const modalRefresh  = document.getElementById('modalRefresh');
+  const prevBtn       = document.getElementById('prevBtn');
+  const nextBtn       = document.getElementById('nextBtn');
+  const navCounter    = document.getElementById('navCounter');
+
+  /* ── Helpers ───────────────────────────────────────────────────────── */
+  function timeAgo(ms) {
+    const s = Math.floor((Date.now() - ms) / 1000);
+    if (s < 60)       return `${s}s ago`;
+    if (s < 3600)     return `${Math.floor(s/60)}m ago`;
+    if (s < 86400)    return `${Math.floor(s/3600)}h ago`;
+    return `${Math.floor(s/86400)}d ago`;
+  }
+
+  function showToast(msg, type = 'info') {
+    toast.textContent = msg;
+    toast.className = `show ${type}`;
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => toast.className = '', 3000);
+  }
+
+  function badgeClass(mode) {
+    return { mobile: 'badge-mobile', desktop: 'badge-desktop', fullhd: 'badge-fullhd' }[mode] || 'badge-desktop';
+  }
+
+  function hostOf(url) {
+    try { return new URL(url).hostname; } catch { return url; }
+  }
+
+  /* ── Mode selector ─────────────────────────────────────────────────── */
+  modeGroup.addEventListener('click', (e) => {
+    const btn = e.target.closest('.mode-btn');
+    if (!btn) return;
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentMode = btn.dataset.mode;
+  });
+
+  /* ── Load gallery ──────────────────────────────────────────────────── */
+  async function loadGallery() {
+    try {
+      const res = await fetch('/api/screenshots');
+      screenshots = await res.json();
+    } catch {
+      screenshots = [];
+    }
+    renderGallery();
+  }
+
+  function renderGallery() {
+    count.textContent = `${screenshots.length} screenshot${screenshots.length !== 1 ? 's' : ''}`;
+    galleryLabel.textContent = `All screenshots (${screenshots.length})`;
+
+    if (screenshots.length === 0) {
+      gallery.innerHTML = `
+        <div class="empty-state">
+          <div class="icon">📸</div>
+          <p>No screenshots yet</p>
+          <small>Paste a URL above and hit Capture</small>
+        </div>`;
+      return;
+    }
+
+    gallery.innerHTML = screenshots.map((s, i) => `
+      <div class="card" data-index="${i}">
+        <div class="card-thumb">
+          <img src="${s.imageUrl}?t=${s.capturedAt}" alt="${s.url}" class="loading"
+               onload="this.classList.remove('loading')"
+               onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22640%22 height=%22360%22><rect fill=%22%231c2035%22 width=%22640%22 height=%22360%22/><text x=%2250%25%22 y=%2250%25%22 fill=%22%237880a0%22 font-size=%2220%22 text-anchor=%22middle%22 dominant-baseline=%22middle%22>Failed to load</text></svg>'" />
+          <div class="card-overlay">
+            <button class="overlay-btn view" data-index="${i}">View</button>
+            <button class="overlay-btn refresh" data-index="${i}" data-url="${encodeURIComponent(s.url)}" data-mode="${s.mode}">↺ Refresh</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="card-url" title="${s.url}">${hostOf(s.url)}</div>
+          <div class="card-meta">
+            <span class="badge ${badgeClass(s.mode)}">${s.mode}</span>
+            <span class="card-time">${timeAgo(s.capturedAt)}</span>
+          </div>
+        </div>
+      </div>`).join('');
+  }
+
+  /* ── Gallery click delegation ──────────────────────────────────────── */
+  gallery.addEventListener('click', async (e) => {
+    const viewBtn    = e.target.closest('.overlay-btn.view');
+    const refreshBtn = e.target.closest('.overlay-btn.refresh');
+    const card       = e.target.closest('.card');
+
+    if (refreshBtn) {
+      e.stopPropagation();
+      await forceRefresh(refreshBtn.dataset.url, refreshBtn.dataset.mode, refreshBtn);
+      return;
+    }
+    if (card || viewBtn) {
+      const idx = parseInt((viewBtn || card).dataset.index, 10);
+      openModal(idx);
+    }
+  });
+
+  /* ── Capture ───────────────────────────────────────────────────────── */
+  captureBtn.addEventListener('click', capture);
+  urlInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') capture(); });
+
+  async function capture() {
+    const raw = urlInput.value.trim();
+    if (!raw) { showToast('Please enter a URL', 'error'); return; }
+
+    let url;
+    try { url = new URL(raw.startsWith('http') ? raw : 'https://' + raw).href; }
+    catch { showToast('Invalid URL', 'error'); return; }
+
+    urlInput.value = url;
+    captureBtn.disabled = true;
+    captureBtn.classList.add('loading');
+    showToast('Capturing screenshot…', 'info');
+
+    try {
+      const res = await fetch(`/api/capture?url=${encodeURIComponent(url)}&mode=${currentMode}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed');
+      showToast(data.stale ? 'Served from cache, refreshing in background' : 'Screenshot captured!', 'success');
+      await loadGallery();
+    } catch (err) {
+      showToast(err.message || 'Capture failed', 'error');
+    } finally {
+      captureBtn.disabled = false;
+      captureBtn.classList.remove('loading');
+    }
+  }
+
+  async function forceRefresh(encodedUrl, mode, btn) {
+    btn.classList.add('spinning');
+    btn.textContent = '⏳';
+    try {
+      const res = await fetch(`/api/capture?url=${encodedUrl}&mode=${mode}&force=true`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed');
+      showToast('Refreshed!', 'success');
+      await loadGallery();
+      if (modalIndex >= 0) openModal(modalIndex);
+    } catch (err) {
+      showToast(err.message || 'Refresh failed', 'error');
+    } finally {
+      btn.classList.remove('spinning');
+      btn.textContent = '↺ Refresh';
+    }
+  }
+
+  /* ── Modal ─────────────────────────────────────────────────────────── */
+  function openModal(index) {
+    modalIndex = index;
+    const s = screenshots[index];
+    if (!s) return;
+
+    modal.classList.add('open');
+    modalTitle.textContent = `${hostOf(s.url)} · ${s.mode}`;
+    modalImg.src = `${s.imageUrl}?t=${Date.now()}`;
+    modalUrl.innerHTML = `<a href="${s.url}" target="_blank" rel="noopener">${s.url}</a>`;
+    modalMode.innerHTML = `<span class="badge ${badgeClass(s.mode)}">${s.mode}</span>`;
+    modalTime.textContent = timeAgo(s.capturedAt);
+    modalDownload.href = s.imageUrl;
+    modalDownload.download = `${hostOf(s.url)}-${s.mode}.png`;
+
+    prevBtn.disabled = index === 0;
+    nextBtn.disabled = index === screenshots.length - 1;
+    navCounter.textContent = `${index + 1} / ${screenshots.length}`;
+
+    modalRefresh.onclick = async () => {
+      modalRefresh.textContent = '⏳';
+      modalRefresh.disabled = true;
+      try {
+        await fetch(`/api/capture?url=${encodeURIComponent(s.url)}&mode=${s.mode}&force=true`);
+        showToast('Refreshed!', 'success');
+        await loadGallery();
+        openModal(modalIndex);
+      } finally {
+        modalRefresh.textContent = '↺';
+        modalRefresh.disabled = false;
+      }
+    };
+  }
+
+  function closeModal() {
+    modal.classList.remove('open');
+    modalIndex = -1;
+  }
+
+  modalBack.addEventListener('click', closeModal);
+  prevBtn.addEventListener('click', () => { if (modalIndex > 0) openModal(modalIndex - 1); });
+  nextBtn.addEventListener('click', () => { if (modalIndex < screenshots.length - 1) openModal(modalIndex + 1); });
+
+  document.addEventListener('keydown', (e) => {
+    if (!modal.classList.contains('open')) return;
+    if (e.key === 'Escape')      closeModal();
+    if (e.key === 'ArrowLeft')   prevBtn.click();
+    if (e.key === 'ArrowRight')  nextBtn.click();
+  });
+
+  /* ── Boot ──────────────────────────────────────────────────────────── */
+  loadGallery();
+  setInterval(loadGallery, 10_000); // poll every 10s for background revalidations
+</script>
+</body>
+</html>
