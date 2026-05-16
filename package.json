@@ -1,0 +1,22 @@
+{
+  "name": "dynamic-screenshot",
+  "version": "1.0.0",
+  "description": "Local screenshot service — Stale-While-Revalidate with Puppeteer + Express",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "ts-node src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "puppeteer": "^24.15.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.0"
+  }
+}
